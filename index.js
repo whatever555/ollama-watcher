@@ -8,6 +8,9 @@ const chalk = require('chalk');
 const path = require('path');
 const fs = require('fs');
 const { readFile } = require('fs').promises;
+const x;
+const y;
+const yy;
 
 // Configuration
 const OLLAMA_HOST = process.env.OLLAMA_HOST || 'http://localhost';
