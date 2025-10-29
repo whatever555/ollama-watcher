@@ -60,21 +60,32 @@ async function getBaseBranch(git) {
 }
 
 /**
- * Get git diff for uncommitted changes (working directory vs HEAD)
+ * Get git diff for uncommitted changes (working directory vs base branch)
  */
 async function getUncommittedDiff(git, filePath) {
   try {
-    // Check if file is in git first
-    const status = await git.status();
+    // Get the base branch to compare against
+    const baseBranch = await getBaseBranch(git);
     
-    // Get diff for working directory changes (uncommitted)
-    // This shows changes in the working directory (not staged)
-    const diff = await git.diff(['HEAD', '--', filePath]);
+    // Get diff for working directory changes compared to base branch
+    // This shows all changes: staged + unstaged compared to base branch
+    const diff = await git.diff([baseBranch, '--', filePath]);
+    
+    // If no diff against base branch, try HEAD (in case file is new in current branch)
+    if (!diff || diff.trim().length === 0) {
+      const headDiff = await git.diff(['HEAD', '--', filePath]);
+      return headDiff || '';
+    }
+    
     return diff;
   } catch (error) {
     // File might not be tracked yet, check if it's a new file
     try {
-      // For new files, we can show the entire content as additions
+      // For new files, check if it exists in base branch
+      const baseBranch = await getBaseBranch(git);
+      const baseBranchDiff = await git.diff([baseBranch, 'HEAD', '--', filePath]).catch(() => '');
+      
+      // If file doesn't exist in base branch, it's a new file
       const isTracked = await git.raw(['ls-files', '--error-unmatch', filePath]).then(() => true).catch(() => false);
       if (!isTracked) {
         // New file - return empty diff, we'll handle this in the prompt
@@ -170,15 +181,44 @@ async function requestOllama(prompt) {
 /**
  * Generate code review prompt
  */
-function generatePrompt(filePath, fileContent, gitDiff, isCommitted = false) {
+function generatePrompt(filePath, fileContent, gitDiff, isCommitted = false, isLight = false) {
   const hasDiff = gitDiff && gitDiff.trim().length > 0;
   
+  if (isLight) {
+    // Light mode: short and concise
+    let prompt = `Code review (be BRIEF and CONCISE):\n\n`;
+    
+    if (isCommitted) {
+      prompt += `Reviewing COMMITTED changes.\n\n`;
+    } else {
+      prompt += `Reviewing UNCOMMITTED changes (vs base branch).\n\n`;
+    }
+    
+    if (hasDiff) {
+      prompt += `Changes:\n\`\`\`diff\n${gitDiff}\n\`\`\`\n\n`;
+    } else {
+      prompt += `New file.\n\n`;
+    }
+    
+    prompt += `File: ${filePath}\n`;
+    prompt += `Current code:\n\`\`\`\n${fileContent}\n\`\`\`\n\n`;
+    
+    prompt += `Provide SHORT, concise feedback (max 3-5 bullet points):\n`;
+    prompt += `- What's good\n`;
+    prompt += `- Critical issues only\n`;
+    prompt += `- One key improvement\n`;
+    prompt += `Keep response under 100 words. Be direct and actionable.`;
+    
+    return prompt;
+  }
+  
+  // Full mode: detailed review
   let prompt = `You are an expert code reviewer. Review the following code file and provide feedback.\n\n`;
   
   if (isCommitted) {
     prompt += `⚠️ REVIEWING COMMITTED CHANGES (already committed to git)\n\n`;
   } else {
-    prompt += `📝 REVIEWING UNCOMMITTED CHANGES (working directory)\n\n`;
+    prompt += `📝 REVIEWING UNCOMMITTED CHANGES (working directory vs base branch)\n\n`;
   }
   
   if (hasDiff) {
@@ -186,7 +226,7 @@ function generatePrompt(filePath, fileContent, gitDiff, isCommitted = false) {
     if (isCommitted) {
       prompt += `Focus on reviewing the COMMITTED CHANGES shown in the diff.\n\n`;
     } else {
-      prompt += `Focus on reviewing the UNCOMMITTED CHANGES shown in the diff (working directory vs HEAD).\n\n`;
+      prompt += `Focus on reviewing the UNCOMMITTED CHANGES shown in the diff (working directory vs base branch).\n\n`;
     }
   } else {
     prompt += `This appears to be a ${isCommitted ? 'new file that was committed' : 'new file'}.\n\n`;
@@ -242,7 +282,7 @@ function displayReview(filePath, review) {
 /**
  * Process a file change
  */
-async function processFileChange(filePath, baseDir = process.cwd()) {
+async function processFileChange(filePath, baseDir = process.cwd(), isLight = false) {
   if (processingFile === filePath) {
     return; // Skip if already processing
   }
@@ -277,7 +317,7 @@ async function processFileChange(filePath, baseDir = process.cwd()) {
     const gitDiff = await getUncommittedDiff(git, relativePath);
     
     // Generate prompt for uncommitted changes
-    const prompt = generatePrompt(relativePath, fileContent, gitDiff, false);
+    const prompt = generatePrompt(relativePath, fileContent, gitDiff, false, isLight);
     
     // Get review from Ollama
     console.log(chalk.gray('🤖 Requesting review from Ollama...'));
@@ -290,7 +330,6 @@ async function processFileChange(filePath, baseDir = process.cwd()) {
     console.error(chalk.red(`\n❌ Error processing ${filePath}:`), error.message);
     if (error.message.includes('connect') || error.message.includes('fetch')) {
       console.error(chalk.red(`\n💡 Make sure Ollama is running at ${OLLAMA_BASE_URL}`));
-      console.log('test');
       console.error(chalk.red(`   You can start Ollama or check your OLLAMA_HOST and OLLAMA_PORT settings.`));
     }
   } finally {
@@ -304,7 +343,7 @@ async function processFileChange(filePath, baseDir = process.cwd()) {
 let lastCommitHash = null;
 let processingCommit = false;
 
-async function processCommit(git, baseDir) {
+async function processCommit(git, baseDir, isLight = false) {
   if (processingCommit) {
     return;
   }
@@ -373,7 +412,7 @@ async function processCommit(git, baseDir) {
       const gitDiff = await getCommittedDiff(git, relativePath);
       
       // Generate prompt for committed changes
-      const prompt = generatePrompt(relativePath, fileContent, gitDiff, true);
+      const prompt = generatePrompt(relativePath, fileContent, gitDiff, true, isLight);
       
       // Get review from Ollama
       console.log(chalk.gray(`🤖 Requesting review for committed file: ${relativePath}...`));
@@ -395,7 +434,7 @@ async function processCommit(git, baseDir) {
 /**
  * Setup file watcher
  */
-function setupWatcher(baseDir) {
+function setupWatcher(baseDir, isLight = false) {
   const git = simpleGit(baseDir);
   
   // Initialize last commit hash
@@ -431,7 +470,7 @@ function setupWatcher(baseDir) {
     }
     
     debounceRecord = setTimeout(async () => {
-      await processFileChange(filePath, baseDir);
+      await processFileChange(filePath, baseDir, isLight);
     }, DEBOUNCE_DELAY);
   });
   
@@ -446,7 +485,7 @@ function setupWatcher(baseDir) {
           clearTimeout(commitDebounceTimer);
         }
         commitDebounceTimer = setTimeout(async () => {
-          await processCommit(git, baseDir);
+          await processCommit(git, baseDir, isLight);
         }, COMMIT_DETECTION_DELAY);
       });
       
@@ -479,7 +518,7 @@ function setupWatcher(baseDir) {
 }
 
 // Watch functionality
-async function startWatch(watchDir) {
+async function startWatch(watchDir, isLight = false) {
   try {
     const resolvedDir = path.resolve(watchDir);
     
@@ -502,7 +541,7 @@ async function startWatch(watchDir) {
     }
     
     // Setup watcher
-    const watcher = setupWatcher(resolvedDir);
+    const watcher = setupWatcher(resolvedDir, isLight);
     
     // Handle graceful shutdown
     process.on('SIGINT', () => {
@@ -527,9 +566,10 @@ program
   .version('1.0.0')
   .option('-w, --watch', 'Watch files for changes and review with Ollama')
   .option('-d, --dir <directory>', 'Directory to watch', process.cwd())
+  .option('-l, --light', 'Provide short, concise feedback (light mode)')
   .action(async (options) => {
     if (options.watch) {
-      await startWatch(options.dir);
+      await startWatch(options.dir, options.light);
     } else {
       program.help();
     }
