@@ -1,6 +1,6 @@
 {
   "name": "ollama-watcher",
-  "version": "1.4.4",
+  "version": "1.4.5",
   "description": "An npm package that connects to a local ollama instance and watches the code changes in your project while providing feedback on every change made",
   "main": "index.js",
   "bin": {
@@ -19,7 +19,6 @@
     "checking",
     "smart",
     "ai",
-    "asdfasdfasdf",
     "code",
     "review",
     "watcher"
