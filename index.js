@@ -294,6 +294,7 @@ async function processFileChange(filePath, baseDir = process.cwd(), isLight = fa
     const absolutePath = path.isAbsolute(filePath) ? filePath : path.resolve(baseDir, filePath);
     const relativePath = path.relative(baseDir, absolutePath);
     
+    console.log('debug test', relativePath, absolutePath);
     // Check if file is ignored
     if (await isIgnored(git, relativePath)) {
       console.log(chalk.gray(`⏭️  Skipping ignored file: ${relativePath}`));
