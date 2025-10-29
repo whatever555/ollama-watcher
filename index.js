@@ -240,7 +240,9 @@ function generatePrompt(filePath, fileContent, gitDiff, isCommitted = false, isL
       prompt += `Consider the context of why these specific changes were made. `;
       prompt += `Evaluate if the changes are correct, maintainable, and follow best practices.\n\n`;
     } else {
-      prompt += `Focus on reviewing the UNCOMMITTED CHANGES shown in the diff (working directory vs base branch).\n\n`;
+      prompt += `IMPORTANT: Focus ONLY on reviewing the UNCOMMITTED CHANGES shown in the diff. `;
+      prompt += `Analyze what was added (+), modified (~), or removed (-). `;
+      prompt += `Do NOT review the entire file - only the specific uncommitted changes made.\n\n`;
     }
   } else {
     prompt += `This appears to be a ${isCommitted ? 'new file that was committed' : 'new file'}.\n\n`;
@@ -248,40 +250,123 @@ function generatePrompt(filePath, fileContent, gitDiff, isCommitted = false, isL
   
   if (isCommitted && hasDiff) {
     // For committed changes with diff, focus on the changes
-    prompt += `Current file content after the commit:\n\`\`\`\n${fileContent}\n\`\`\`\n\n`;
+    const contextContent = fileContent.length > 2000 ? fileContent.substring(0, 2000) + '\n... (truncated for context)' : fileContent;
+    prompt += `Current file state after commit (for context only - focus review on the diff above):\n\`\`\`\n${contextContent}\n\`\`\`\n\n`;
     prompt += `File: ${filePath}\n\n`;
-    prompt += `Provide a focused review of the CHANGES made:\n`;
-    prompt += `1. **Change Analysis**: What was changed and why it makes sense (or doesn't)\n`;
-    prompt += `2. **Impact**: How these changes affect the codebase and functionality\n`;
-    prompt += `3. **Issues**: Any problems, bugs, or concerns with the specific changes\n`;
-    prompt += `4. **Suggestions**: How the changes could be improved\n\n`;
+    prompt += `Provide a focused review of ONLY THE CHANGES shown in the diff:\n`;
+    prompt += `1. **Change Analysis**: What specific lines were added/modified/removed and why\n`;
+    prompt += `2. **Correctness**: Are the changes correct and do what they're intended to do?\n`;
+    prompt += `3. **Issues**: Any bugs, errors, or problems with the specific changes\n`;
+    prompt += `4. **Improvements**: How these specific changes could be improved or simplified\n`;
+    prompt += `5. **Impact**: How these changes affect the codebase and functionality\n\n`;
+    prompt += `Do NOT provide a general review of the entire file. Focus solely on analyzing the diff changes.`;
   } else {
-    // For uncommitted changes or new files, use full review structure
-    prompt += `File: ${filePath}\n`;
-    if (!hasDiff) {
-      prompt += `File content:\n\`\`\`\n${fileContent}\n\`\`\`\n\n`;
+    // For uncommitted changes with diff, also use focused structure
+    if (hasDiff && !isCommitted) {
+      // Uncommitted changes - focus on the diff
+      const contextContent = fileContent.length > 2000 ? fileContent.substring(0, 2000) + '\n... (truncated for context)' : fileContent;
+      prompt += `Current file state (for context only - focus review on the diff above):\n\`\`\`\n${contextContent}\n\`\`\`\n\n`;
+      prompt += `File: ${filePath}\n\n`;
+      prompt += `Provide a focused review of ONLY THE CHANGES shown in the diff:\n`;
+      prompt += `1. **Change Analysis**: What specific lines were added/modified/removed and why\n`;
+      prompt += `2. **Correctness**: Are the changes correct and do what they're intended to do?\n`;
+      prompt += `3. **Issues**: Any bugs, errors, or problems with the specific changes\n`;
+      prompt += `4. **Improvements**: How these specific changes could be improved or simplified\n`;
+      prompt += `5. **Context**: How do these changes fit with the rest of the codebase?\n\n`;
+      prompt += `Do NOT provide a general review of the entire file. Focus solely on analyzing the diff changes.`;
     } else {
-      prompt += `Current file content:\n\`\`\`\n${fileContent}\n\`\`\`\n\n`;
+      // New files - use full review structure
+      prompt += `File: ${filePath}\n`;
+      prompt += `File content:\n\`\`\`\n${fileContent}\n\`\`\`\n\n`;
+      prompt += `Please provide a code review with the following structure:\n`;
+      prompt += `1. **Summary**: Brief overview of the code\n`;
+      prompt += `2. **What's Done Well**: List positive aspects, good practices, strengths\n`;
+      prompt += `3. **Suggestions for Improvement**: Specific, actionable suggestions for fixes and improvements\n`;
+      prompt += `4. **Potential Issues**: Any bugs, security concerns, or potential problems\n`;
+      prompt += `5. **Best Practices**: Recommendations for better code organization, performance, or maintainability\n\n`;
     }
-    prompt += `Please provide a code review with the following structure:\n`;
-    prompt += `1. **Summary**: Brief overview of the code\n`;
-    prompt += `2. **What's Done Well**: List positive aspects, good practices, strengths\n`;
-    prompt += `3. **Suggestions for Improvement**: Specific, actionable suggestions for fixes and improvements\n`;
-    prompt += `4. **Potential Issues**: Any bugs, security concerns, or potential problems\n`;
-    prompt += `5. **Best Practices**: Recommendations for better code organization, performance, or maintainability\n\n`;
   }
   prompt += `Format your response in a clear, easy-to-read way with clear sections and bullet points.`;
   
   return prompt;
 }
+console.log("TAT");
 
 /**
- * Format and down output the review
+ * Analyze review to determine if code is okay (thumbs up) or needs work (thumbs down)
+ */
+function analyzeReviewSentiment(review) {
+  const reviewLower = review.toLowerCase();
+  
+  // Negative indicators (thumbs down)
+  const negativeKeywords = [
+    'bug', 'error', 'issue', 'problem', 'concern', 'wrong', 'incorrect',
+    'fails', 'broken', 'doesn\'t work', 'security', 'vulnerability',
+    'critical', 'severe', 'major issue', 'must fix', 'needs to be fixed',
+    'should be changed', 'incorrect', 'improper', 'bad practice',
+    'anti-pattern', 'dangerous', 'risk', 'warning'
+  ];
+  
+  // Positive indicators (thumbs up)
+  const positiveKeywords = [
+    'good', 'great', 'excellent', 'well done', 'correct', 'proper',
+    'follows best practices', 'clean', 'maintainable', 'solid',
+    'well written', 'looks good', 'no issues', 'no problems',
+    'acceptable', 'fine', 'okay', 'ok', 'nice', 'well implemented'
+  ];
+  
+  // Count occurrences
+  let negativeScore = 0;
+  let positiveScore = 0;
+  
+  negativeKeywords.forEach(keyword => {
+    const regex = new RegExp(`\\b${keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'gi');
+    const matches = reviewLower.match(regex);
+    if (matches) {
+      negativeScore += matches.length;
+    }
+  });
+  
+  positiveKeywords.forEach(keyword => {
+    const regex = new RegExp(`\\b${keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'gi');
+    const matches = reviewLower.match(regex);
+    if (matches) {
+      positiveScore += matches.length;
+    }
+  });
+  
+  // Check for explicit "thumbs up" phrases (no issues, looks good, etc.)
+  const noIssuesPattern = /(no\s+(issues?|problems?|concerns?|bugs?))|looks?\s+good|seems?\s+(fine|ok|okay|good|correct)/i;
+  const hasIssuesPattern = /(has\s+(issues?|problems?|bugs?|concerns?))|needs?\s+(fix|change|improvement|work)/i;
+  
+  if (noIssuesPattern.test(review)) {
+    positiveScore += 3;
+  }
+  
+  if (hasIssuesPattern.test(review)) {
+    negativeScore += 3;
+  }
+  
+  // Determine verdict
+  // If negative score is significantly higher, thumbs down
+  // If positive is higher or they're close, thumbs up
+  // Default to thumbs up if scores are equal (benefit of the doubt)
+  return negativeScore > positiveScore + 1 ? 'down' : 'up';
+}
+
+/**
+ * Format and output the review
  */
 function displayReview(filePath, review) {
+  // Analyze sentiment first
+  const verdict = analyzeReviewSentiment(review);
+  const thumbsEmoji = verdict === 'up' ? '👍' : '👎';
+  const thumbsText = verdict === 'up' ? chalk.green('THUMBS UP - Code looks good!') : chalk.red('THUMBS DOWN - Issues found');
+  
   console.log('\n' + chalk.cyan('═'.repeat(80)));
   console.log(chalk.bold.cyan(`📝 Code Review: ${filePath}`));
   console.log(chalk.cyan('═'.repeat(80)) + '\n');
+  console.log(chalk.bold(`${thumbsEmoji} ${thumbsText}`) + '\n');
   
   // Split review into sections if possible
   const sections = {
@@ -294,7 +379,6 @@ function displayReview(filePath, review) {
   
   // Try to format by sections
   let formatted = review;
-  const lines = review.split('\n');
   
   // Basic formatting
   formatted = review
