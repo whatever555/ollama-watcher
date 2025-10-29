@@ -62,37 +62,52 @@ async function getBaseBranch(git) {
 
 /**
  * Get git diff for uncommitted changes (working directory vs base branch)
+ * This compares the current working directory state against the base branch
  */
 async function getUncommittedDiff(git, filePath) {
   try {
-    // Get the base branch to compare against
+    // For uncommitted changes when file is saved, compare working directory vs base branch
+    // This shows all changes (committed + uncommitted) in current branch vs base
     const baseBranch = await getBaseBranch(git);
     
-    // Get diff for working directory changes compared to base branch
-    // This shows all changes: staged + unstaged compared to base branch
-    const diff = await git.diff([baseBranch, '--', filePath]);
+    // First check if file exists in git
+    const isTracked = await git.raw(['ls-files', '--error-unmatch', filePath]).then(() => true).catch(() => false);
     
-    // If no diff against base branch, try HEAD (in case file is new in current branch)
-    if (!diff || diff.trim().length === 0) {
-      const headDiff = await git.diff(['HEAD', '--', filePath]);
-      return headDiff || '';
-    }
-    
-    return diff;
-  } catch (error) {
-    // File might not be tracked yet, check if it's a new file
-    try {
-      // For new files, check if it exists in base branch
-      const baseBranch = await getBaseBranch(git);
-      const baseBranchDiff = await git.diff([baseBranch, 'HEAD', '--', filePath]).catch(() => '');
+    if (isTracked) {
+      // File is tracked - compare working directory vs base branch
+      // This shows uncommitted changes plus any committed changes vs base
+      const diff = await git.diff([baseBranch, '--', filePath]);
+      if (diff && diff.trim().length > 0) {
+        return diff;
+      }
       
-      // If file doesn't exist in base branch, it's a new file
-      const isTracked = await git.raw(['ls-files', '--error-unmatch', filePath]).then(() => true).catch(() => false);
-      if (!isTracked) {
-        // New file - return empty diff, we'll handle this in the prompt
+      // If no diff vs base branch, check uncommitted changes vs HEAD
+      const headDiff = await git.diff(['HEAD', '--', filePath]);
+      if (headDiff && headDiff.trim().length > 0) {
+        // There are uncommitted changes vs HEAD
+        return headDiff;
+      }
+    } else {
+      // File is not tracked - it's a new file
+      // Check if it exists in base branch
+      try {
+        const existsInBase = await git.raw(['ls-tree', '-r', '--name-only', baseBranch, '--', filePath]).then(() => true).catch(() => false);
+        if (!existsInBase) {
+          // Completely new file - return empty, will be handled as new file
+          return '';
+        }
+      } catch (err) {
+        // Ignore error, treat as new file
         return '';
       }
-      return '';
+    }
+    
+    return '';
+  } catch (error) {
+    // Fallback: try simple HEAD comparison for uncommitted changes
+    try {
+      const diff = await git.diff(['HEAD', '--', filePath]);
+      return diff || '';
     } catch (err) {
       return '';
     }
@@ -213,13 +228,17 @@ function generatePrompt(filePath, fileContent, gitDiff, isCommitted = false, isL
     let prompt = `Review the code changes and provide 2-3 simple, clear suggestions for improvement.\n\n`;
     
     if (hasDiff) {
-      prompt += `Changes made:\n\`\`\`diff\n${gitDiff}\n\`\`\`\n\n`;
+      prompt += `Changes made (focus ONLY on the lines indicated by the line numbers in the diff):\n\`\`\`diff\n${gitDiff}\n\`\`\`\n\n`;
+      prompt += `IMPORTANT: When providing feedback, ALWAYS include the specific line numbers (from the + lines in the diff). `;
+      prompt += `Reference the exact lines that need improvement using format "Line X: suggestion". `;
+      prompt += `Only comment on the lines that were changed (added/modified), not the entire file.\n\n`;
     } else {
       prompt += `New file: ${filePath}\n\n`;
       prompt += `Code:\n\`\`\`\n${fileContent}\n\`\`\`\n\n`;
+      prompt += `When providing feedback, include line numbers where possible (e.g., "Line 15: suggestion").\n\n`;
     }
     
-    prompt += `Provide 2-3 brief, actionable improvement suggestions. Be simple and clear. One line per suggestion.`;
+    prompt += `Provide 2-3 brief, actionable improvement suggestions with line numbers. Be simple and clear. One line per suggestion.`;
     
     return prompt;
   }
@@ -235,17 +254,27 @@ function generatePrompt(filePath, fileContent, gitDiff, isCommitted = false, isL
   
   if (hasDiff) {
     prompt += `Here are the ${isCommitted ? 'committed' : 'uncommitted'} changes (git diff) for this file:\n\`\`\`diff\n${gitDiff}\n\`\`\`\n\n`;
+    
+    prompt += `CRITICAL INSTRUCTIONS:\n`;
+    prompt += `1. Focus EXCLUSIVELY on the specific lines of code that were CHANGED (indicated by + and - in the diff)\n`;
+    prompt += `2. ALWAYS reference specific LINE NUMBERS when providing feedback\n`;
+    prompt += `3. The diff shows line numbers - use the line numbers from lines starting with '+' (additions/modifications)\n`;
+    prompt += `4. Format your feedback with line numbers: "Line X: issue/suggestion" or "Lines X-Y: concern"\n`;
+    prompt += `5. Do NOT review unchanged code - ONLY review the lines that were added, modified, or removed\n`;
+    prompt += `6. When mentioning issues or suggestions, always specify which exact line(s) you're referring to\n\n`;
+    
     if (isCommitted) {
-      prompt += `Analyze the changes shown in the diff. Focus on what was added, modified, or removed. `;
-      prompt += `Consider the context of why these specific changes were made. `;
-      prompt += `Evaluate if the changes are correct, maintainable, and follow best practices.\n\n`;
+      prompt += `Analyze ONLY the changed lines shown in the diff above. `;
+      prompt += `Focus on what was added (+), modified, or removed (-). `;
+      prompt += `Consider the context of why these specific lines were changed. `;
+      prompt += `Evaluate if the changes to these specific lines are correct, maintainable, and follow best practices.\n\n`;
     } else {
-      prompt += `IMPORTANT: Focus ONLY on reviewing the UNCOMMITTED CHANGES shown in the diff. `;
-      prompt += `Analyze what was added (+), modified (~), or removed (-). `;
-      prompt += `Do NOT review the entire file - only the specific uncommitted changes made.\n\n`;
+      prompt += `Review ONLY the UNCOMMITTED CHANGES - the specific lines marked with + or - in the diff above. `;
+      prompt += `Do NOT review the entire file - only analyze the exact lines that were changed.\n\n`;
     }
   } else {
     prompt += `This appears to be a ${isCommitted ? 'new file that was committed' : 'new file'}.\n\n`;
+    prompt += `When providing feedback, include line numbers where possible (e.g., "Line 15: suggestion").\n\n`;
   }
   
   if (isCommitted && hasDiff) {
@@ -253,13 +282,17 @@ function generatePrompt(filePath, fileContent, gitDiff, isCommitted = false, isL
     const contextContent = fileContent.length > 2000 ? fileContent.substring(0, 2000) + '\n... (truncated for context)' : fileContent;
     prompt += `Current file state after commit (for context only - focus review on the diff above):\n\`\`\`\n${contextContent}\n\`\`\`\n\n`;
     prompt += `File: ${filePath}\n\n`;
-    prompt += `Provide a focused review of ONLY THE CHANGES shown in the diff:\n`;
-    prompt += `1. **Change Analysis**: What specific lines were added/modified/removed and why\n`;
-    prompt += `2. **Correctness**: Are the changes correct and do what they're intended to do?\n`;
-    prompt += `3. **Issues**: Any bugs, errors, or problems with the specific changes\n`;
-    prompt += `4. **Improvements**: How these specific changes could be improved or simplified\n`;
-    prompt += `5. **Impact**: How these changes affect the codebase and functionality\n\n`;
-    prompt += `Do NOT provide a general review of the entire file. Focus solely on analyzing the diff changes.`;
+    prompt += `Provide a focused review of ONLY THE CHANGED LINES shown in the diff (with line numbers):\n`;
+    prompt += `1. **Change Analysis**: What specific lines (include line numbers) were added/modified/removed and why\n`;
+    prompt += `   Example: "Line 42: Added error handling for null check"\n`;
+    prompt += `2. **Correctness**: Are the changes on these specific lines correct? Reference line numbers.\n`;
+    prompt += `   Example: "Line 55: This condition might fail when value is 0"\n`;
+    prompt += `3. **大嫂**: Any bugs, errors, or problems with the specific changed lines. ALWAYS include line numbers.\n`;
+    prompt += `   Example: "Lines 78-80: Missing null check could cause NullPointerException"\n`;
+    prompt += `4. **Improvements**: How these specific changed lines could be improved. Reference exact line numbers.\n`;
+    prompt += `   Example: "Line 95: Consider extracting this logic into a helper function"\n`;
+    prompt += `5. **Impact**: How these specific line changes affect the codebase. Mention relevant line numbers.\n\n`;
+    prompt += `REMEMBER: Only review the lines that show + or - in the diff. Always include line numbers in your feedback.`;
   } else {
     // For uncommitted changes with diff, also use focused structure
     if (hasDiff && !isCommitted) {
@@ -267,13 +300,17 @@ function generatePrompt(filePath, fileContent, gitDiff, isCommitted = false, isL
       const contextContent = fileContent.length > 2000 ? fileContent.substring(0, 2000) + '\n... (truncated for context)' : fileContent;
       prompt += `Current file state (for context only - focus review on the diff above):\n\`\`\`\n${contextContent}\n\`\`\`\n\n`;
       prompt += `File: ${filePath}\n\n`;
-      prompt += `Provide a focused review of ONLY THE CHANGES shown in the diff:\n`;
-      prompt += `1. **Change Analysis**: What specific lines were added/modified/removed and why\n`;
-      prompt += `2. **Correctness**: Are the changes correct and do what they're intended to do?\n`;
-      prompt += `3. **Issues**: Any bugs, errors, or problems with the specific changes\n`;
-      prompt += `4. **Improvements**: How these specific changes could be improved or simplified\n`;
-      prompt += `5. **Context**: How do these changes fit with the rest of the codebase?\n\n`;
-      prompt += `Do NOT provide a general review of the entire file. Focus solely on analyzing the diff changes.`;
+      prompt += `Provide a focused review of ONLY THE CHANGED LINES shown in the diff (with line numbers):\n`;
+      prompt += `1. **Change Analysis**: What specific lines (include line numbers) were added/modified/removed and why\n`;
+      prompt += `   Example: "Line 42: Added error handling for null check"\n`;
+      prompt += `2. **Correctness**: Are the changes on these specific lines correct? Reference line numbers.\n`;
+      prompt += `   Example: "Line 55: This condition might fail when value is 0"\n`;
+      prompt += `3. **Issues**: Any bugs, errors, or problems with the specific changed lines. ALWAYS include line numbers.\n`;
+      prompt += `   Example: "Lines 78-80: Missing null check could cause NullPointerException"\n`;
+      prompt += `4. **Improvements**: How these specific changed lines could be improved. Reference exact line numbers.\n`;
+      prompt += `   Example: "Line 95: Consider extracting this logic into a helper function"\n`;
+      prompt += `5. **Context**: How do these specific line changes fit with the rest of the codebase? Mention line numbers.\n\n`;
+      prompt += `REMEMBER: Only review the lines that show + or - in the diff. Always include line numbers in your feedback.`;
     } else {
       // New files - use full review structure
       prompt += `File: ${filePath}\n`;
@@ -290,7 +327,6 @@ function generatePrompt(filePath, fileContent, gitDiff, isCommitted = false, isL
   
   return prompt;
 }
-console.log("TAT");
 
 /**
  * Analyze review to determine if code is okay (thumbs up) or needs work (thumbs down)
@@ -396,6 +432,7 @@ function displayReview(filePath, review) {
  * Process a file change
  */
 async function processFileChange(filePath, baseDir = process.cwd(), isLight = false) {
+  console.log(chalk.gray(`\n🔄 Processing file change: ${filePath}`));
   if (processingFile === filePath) {
     return; // Skip if already processing
   }
@@ -427,10 +464,28 @@ async function processFileChange(filePath, baseDir = process.cwd(), isLight = fa
     }
     
     // Get uncommitted git diff (working directory changes)
+    // This compares working directory vs base branch (includes uncommitted + committed changes in branch)
     const gitDiff = await getUncommittedDiff(git, relativePath);
     
+    // Also check specifically for uncommitted changes vs HEAD
+    const uncommittedDiff = await git.diff(['HEAD', '--', relativePath]).catch(() => '');
+    
+    // Only skip if there are NO changes at all (no diff vs base branch AND no uncommitted changes vs HEAD)
+    if ((!gitDiff || gitDiff.trim().length === 0) && (!uncommittedDiff || uncommittedDiff.trim().length === 0)) {
+      const isTracked = await git.raw(['ls-files', '--error-unmatch', relativePath]).then(() => true).catch(() => false);
+      if (isTracked) {
+        console.log(chalk.gray(`ℹ️  No uncommitted changes in ${relativePath} - skipping review`));
+        processingFile = null;
+        return;
+      }
+      // If file is not tracked, continue - it's a new file to review
+    }
+    
+    // Use uncommitted diff vs HEAD if available, otherwise use diff vs base branch
+    const finalDiff = (uncommittedDiff && uncommittedDiff.trim().length > 0) ? uncommittedDiff : gitDiff;
+    
     // Generate prompt for uncommitted changes
-    const prompt = generatePrompt(relativePath, fileContent, gitDiff, false, isLight);
+    const prompt = generatePrompt(relativePath, fileContent, finalDiff, false, isLight);
     
     // Create abort controller for this request
     const abortController = new AbortController();
@@ -597,6 +652,8 @@ function setupWatcher(baseDir, isLight = false) {
   
   watcher.on('change', (filePath) => {
     // Process file changes (uncommitted changes)
+    console.log(chalk.gray(`📝 File changed detected: ${filePath}`));
+    
     // Debounce to avoid multiple rapid triggers
     if (debounceRecord) {
       clearTimeout(debounceRecord);
