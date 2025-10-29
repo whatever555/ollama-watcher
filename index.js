@@ -21,6 +21,7 @@ const COMMIT_DETECTION_DELAY = 2000; // Longer delay for commit detection
 let debounceRecord = null;
 let commitDebounceTimer = null;
 let processingFile = null;
+let currentRequestController = null; // For cancelling in-flight requests
 
 /**
  * Get the base branch name (usually main or master)
@@ -153,8 +154,16 @@ async function isIgnored(git, filePath) {
 /**
  * Send request to Ollama API
  */
-async function requestOllama(prompt) {
+async function requestOllama(prompt, abortController) {
   try {
+    // Cancel previous request if exists
+    if (currentRequestController) {
+      currentRequestController.abort();
+    }
+    
+    // Store current controller
+    currentRequestController = abortController;
+    
     const response = await fetch(`${OLLAMA_BASE_URL}/api/generate`, {
       method: 'POST',
       headers: {
@@ -165,6 +174,7 @@ async function requestOllama(prompt) {
         prompt: prompt,
         stream: false,
       }),
+      signal: abortController.signal,
     });
 
     if (!response.ok) {
@@ -172,8 +182,22 @@ async function requestOllama(prompt) {
     }
 
     const data = await response.json();
+    
+    // Clear controller if this is the current request
+    if (currentRequestController === abortController) {
+      currentRequestController = null;
+    }
+    
     return data.response || '';
   } catch (error) {
+    // Clear controller on error
+    if (currentRequestController === abortController) {
+      currentRequestController = null;
+    }
+    
+    if (error.name === 'AbortError') {
+      throw new Error('Request cancelled');
+    }
     throw new Error(`Failed to connect to Ollama: ${error.message}`);
   }
 }
@@ -185,38 +209,26 @@ function generatePrompt(filePath, fileContent, gitDiff, isCommitted = false, isL
   const hasDiff = gitDiff && gitDiff.trim().length > 0;
   
   if (isLight) {
-    // Light mode: short and concise
-    let prompt = `Code review (be BRIEF and CONCISE):\n\n`;
-    
-    if (isCommitted) {
-      prompt += `Reviewing COMMITTED changes.\n\n`;
-    } else {
-      prompt += `Reviewing UNCOMMITTED changes (vs base branch).\n\n`;
-    }
+    // Light mode: simple, clear improvement suggestions only
+    let prompt = `Review the code changes and provide 2-3 simple, clear suggestions for improvement.\n\n`;
     
     if (hasDiff) {
-      prompt += `Changes:\n\`\`\`diff\n${gitDiff}\n\`\`\`\n\n`;
+      prompt += `Changes made:\n\`\`\`diff\n${gitDiff}\n\`\`\`\n\n`;
     } else {
-      prompt += `New file.\n\n`;
+      prompt += `New file: ${filePath}\n\n`;
+      prompt += `Code:\n\`\`\`\n${fileContent}\n\`\`\`\n\n`;
     }
     
-    prompt += `File: ${filePath}\n`;
-    prompt += `Current code:\n\`\`\`\n${fileContent}\n\`\`\`\n\n`;
-    
-    prompt += `Provide SHORT, concise feedback (max 3-5 bullet points):\n`;
-    prompt += `- What's good\n`;
-    prompt += `- Critical issues only\n`;
-    prompt += `- One key improvement\n`;
-    prompt += `Keep response under 100 words. Be direct and actionable.`;
+    prompt += `Provide 2-3 brief, actionable improvement suggestions. Be simple and clear. One line per suggestion.`;
     
     return prompt;
   }
   
   // Full mode: detailed review
-  let prompt = `You are an expert code reviewer. Review the following code file and provide feedback.\n\n`;
+  let prompt = `You are an expert code reviewer. Review the code changes in the context of the project.\n\n`;
   
   if (isCommitted) {
-    prompt += `⚠️ REVIEWING COMMITTED CHANGES (already committed to git)\n\n`;
+    prompt += `Reviewing COMMITTED changes. Focus ONLY on the changes that were made in this commit.\n\n`;
   } else {
     prompt += `📝 REVIEWING UNCOMMITTED CHANGES (working directory vs base branch)\n\n`;
   }
@@ -224,7 +236,9 @@ function generatePrompt(filePath, fileContent, gitDiff, isCommitted = false, isL
   if (hasDiff) {
     prompt += `Here are the ${isCommitted ? 'committed' : 'uncommitted'} changes (git diff) for this file:\n\`\`\`diff\n${gitDiff}\n\`\`\`\n\n`;
     if (isCommitted) {
-      prompt += `Focus on reviewing the COMMITTED CHANGES shown in the diff.\n\n`;
+      prompt += `Analyze the changes shown in the diff. Focus on what was added, modified, or removed. `;
+      prompt += `Consider the context of why these specific changes were made. `;
+      prompt += `Evaluate if the changes are correct, maintainable, and follow best practices.\n\n`;
     } else {
       prompt += `Focus on reviewing the UNCOMMITTED CHANGES shown in the diff (working directory vs base branch).\n\n`;
     }
@@ -232,15 +246,30 @@ function generatePrompt(filePath, fileContent, gitDiff, isCommitted = false, isL
     prompt += `This appears to be a ${isCommitted ? 'new file that was committed' : 'new file'}.\n\n`;
   }
   
-  prompt += `File: ${filePath}\n`;
-  prompt += `Full file content:\n\`\`\`\n${fileContent}\n\`\`\`\n\n`;
-  
-  prompt += `Please provide a code review with the following structure:\n`;
-  prompt += `1. **Summary**: Brief overview of the code\n`;
-  prompt += `2. **What's Done Well**: List positive aspects, good practices, strengths\n`;
-  prompt += `3. **Suggestions for Improvement**: Specific, actionable suggestions for fixes and improvements\n`;
-  prompt += `4. **Potential Issues**: Any bugs, security concerns, or potential problems\n`;
-  prompt += `5. **Best Practices**: Recommendations for better code organization, performance, or maintainability\n\n`;
+  if (isCommitted && hasDiff) {
+    // For committed changes with diff, focus on the changes
+    prompt += `Current file content after the commit:\n\`\`\`\n${fileContent}\n\`\`\`\n\n`;
+    prompt += `File: ${filePath}\n\n`;
+    prompt += `Provide a focused review of the CHANGES made:\n`;
+    prompt += `1. **Change Analysis**: What was changed and why it makes sense (or doesn't)\n`;
+    prompt += `2. **Impact**: How these changes affect the codebase and functionality\n`;
+    prompt += `3. **Issues**: Any problems, bugs, or concerns with the specific changes\n`;
+    prompt += `4. **Suggestions**: How the changes could be improved\n\n`;
+  } else {
+    // For uncommitted changes or new files, use full review structure
+    prompt += `File: ${filePath}\n`;
+    if (!hasDiff) {
+      prompt += `File content:\n\`\`\`\n${fileContent}\n\`\`\`\n\n`;
+    } else {
+      prompt += `Current file content:\n\`\`\`\n${fileContent}\n\`\`\`\n\n`;
+    }
+    prompt += `Please provide a code review with the following structure:\n`;
+    prompt += `1. **Summary**: Brief overview of the code\n`;
+    prompt += `2. **What's Done Well**: List positive aspects, good practices, strengths\n`;
+    prompt += `3. **Suggestions for Improvement**: Specific, actionable suggestions for fixes and improvements\n`;
+    prompt += `4. **Potential Issues**: Any bugs, security concerns, or potential problems\n`;
+    prompt += `5. **Best Practices**: Recommendations for better code organization, performance, or maintainability\n\n`;
+  }
   prompt += `Format your response in a clear, easy-to-read way with clear sections and bullet points.`;
   
   return prompt;
@@ -294,7 +323,6 @@ async function processFileChange(filePath, baseDir = process.cwd(), isLight = fa
     const absolutePath = path.isAbsolute(filePath) ? filePath : path.resolve(baseDir, filePath);
     const relativePath = path.relative(baseDir, absolutePath);
     
-    console.log('debug test', relativePath, absolutePath);
     // Check if file is ignored
     if (await isIgnored(git, relativePath)) {
       console.log(chalk.gray(`⏭️  Skipping ignored file: ${relativePath}`));
@@ -320,14 +348,24 @@ async function processFileChange(filePath, baseDir = process.cwd(), isLight = fa
     // Generate prompt for uncommitted changes
     const prompt = generatePrompt(relativePath, fileContent, gitDiff, false, isLight);
     
+    // Create abort controller for this request
+    const abortController = new AbortController();
+    
     // Get review from Ollama
     console.log(chalk.gray('🤖 Requesting review from Ollama...'));
-    const review = await requestOllama(prompt);
+    const review = await requestOllama(prompt, abortController);
     
     // Display review
     displayReview(relativePath, review);
     
   } catch (error) {
+    // Don't show error if request was cancelled
+    if (error.message.includes('cancelled') || error.message.includes('Request cancelled')) {
+      console.log(chalk.gray(`⏭️  Review cancelled for: ${relativePath || filePath}`));
+      processingFile = null;
+      return;
+    }
+    
     console.error(chalk.red(`\n❌ Error processing ${filePath}:`), error.message);
     if (error.message.includes('connect') || error.message.includes('fetch')) {
       console.error(chalk.red(`\n💡 Make sure Ollama is running at ${OLLAMA_BASE_URL}`));
@@ -415,9 +453,12 @@ async function processCommit(git, baseDir, isLight = false) {
       // Generate prompt for committed changes
       const prompt = generatePrompt(relativePath, fileContent, gitDiff, true, isLight);
       
+      // Create abort controller for this request
+      const abortController = new AbortController();
+      
       // Get review from Ollama
       console.log(chalk.gray(`🤖 Requesting review for committed file: ${relativePath}...`));
-      const review = await requestOllama(prompt);
+      const review = await requestOllama(prompt, abortController);
       
       // Display review
       displayReview(relativePath, review);
@@ -426,6 +467,13 @@ async function processCommit(git, baseDir, isLight = false) {
     console.log(chalk.green(`\n✅ Finished reviewing commit ${commit.hash.substring(0, 7)}\n`));
     
   } catch (error) {
+    // Don't show error if request was cancelled
+    if (error.message.includes('cancelled') || error.message.includes('Request cancelled')) {
+      console.log(chalk.gray(`⏭️  Commit review cancelled`));
+      processingCommit = false;
+      return;
+    }
+    
     console.error(chalk.red(`\n❌ Error processing commit:`), error.message);
   } finally {
     processingCommit = false;
