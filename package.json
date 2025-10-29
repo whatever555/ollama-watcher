@@ -3,6 +3,8 @@
   "version": "1.2.0",
   "description": "An npm package that connects to a local ollama instance and watches the code changes in your project while providing feedback on every change made",
   "main": "index.js",
+  "test": "TA",
+  "new": "test",
   "bin": {
     "ollama-watcher": "./index.js"
   },
