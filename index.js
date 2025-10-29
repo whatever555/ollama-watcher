@@ -474,10 +474,13 @@ async function processFileChange(filePath, baseDir = process.cwd(), isLight = fa
     return; // Skip if already processing
   }
   
+  // Declare relativePath outside try block so it's accessible in catch
+  let relativePath = filePath; // Default to filePath if we can't compute relative path
+  
   try {
     const git = simpleGit(baseDir);
     const absolutePath = path.isAbsolute(filePath) ? filePath : path.resolve(baseDir, filePath);
-    const relativePath = path.relative(baseDir, absolutePath);
+    relativePath = path.relative(baseDir, absolutePath);
     
     // Check if file is ignored FIRST - completely skip ignored files silently
     if (await isIgnored(git, relativePath)) {
@@ -540,7 +543,7 @@ async function processFileChange(filePath, baseDir = process.cwd(), isLight = fa
   } catch (error) {
     // Don't show error if request was cancelled
     if (error.message.includes('cancelled') || error.message.includes('Request cancelled')) {
-      console.log(chalk.gray(`⏭️  Review cancelled for: ${relativePath || filePath}`));
+      console.log(chalk.gray(`⏭️  Review cancelled for: ${relativePath}`));
       processingFile = null;
       return;
     }
