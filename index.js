@@ -280,25 +280,16 @@ function setupWatcher(baseDir) {
   return watcher;
 }
 
-// CLI Setup
-program
-  .name('ollama-watcher')
-  .description('Watch code files and get AI-powered reviews via Ollama')
-  .version('1.0.0');
-
-program
-  .command('watch')
-  .description('Watch files for changes and review with Ollama')
-  .option('-d, --dir <directory>', 'Directory to watch', process.cwd())
-  .action(async (options) => {
-    try {
-      const watchDir = path.resolve(options.dir);
-      
-      // Verify we're in a git repository
-      const git = simpleGit(watchDir);
-      await git.status();
-      
-      // Check Ollama connection
+// Watch functionality
+async function startWatch(watchDir) {
+  try {
+    const resolvedDir = path.resolve(watchDir);
+    
+    // Verify we're in a git repository
+    const git = simpleGit(resolvedDir);
+    await git.status();
+    
+    // Check Ollama connection
       try {
         const response = await fetch(`${OLLAMA_BASE_URL}/api/tags`);
         if (!response.ok) {
@@ -311,22 +302,34 @@ program
         process.exit(1);
       }
       
-      // Setup watcher
-      const watcher = setupWatcher(watchDir);
-      
-      // Handle graceful shutdown
+    // Setup watcher
+    const watcher = setupWatcher(resolvedDir);
+    
+    // Handle graceful shutdown
       process.on('SIGINT', () => {
         console.log(chalk.yellow('\n\n👋 Stopping watcher...'));
         watcher.close();
         process.exit(0);
       });
       
-    } catch (error) {
-      console.error(chalk.red(`\n❌ Error: ${error.message}`));
-      if (error.message.includes('not a git repository')) {
-        console.error(chalk.red('   Please run this command in a git repository.\n'));
-      }
-      process.exit(1);
+  } catch (error) {
+    console.error(chalk.red(`\n❌ Error: ${error.message}`));
+    if (error.message.includes('not a git repository')) {
+      console.error(chalk.red('   Please run this command in a git repository.\n'));
+    }
+    process.exit(1);
+  }
+}
+
+// CLI Setup
+program
+  .option('-w, --watch', 'Watch files for changes and review with Ollama')
+  .option('-d, --dir <directory>', 'Directory to watch', process.cwd())
+  .action(async (options) => {
+    if (options.watch) {
+      await startWatch(options.dir);
+    } else {
+      program.help();
     }
   });
 
