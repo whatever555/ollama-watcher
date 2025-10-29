@@ -290,28 +290,28 @@ async function startWatch(watchDir) {
     await git.status();
     
     // Check Ollama connection
-      try {
-        const response = await fetch(`${OLLAMA_BASE_URL}/api/tags`);
-        if (!response.ok) {
-          throw new Error('Ollama not responding');
-        }
-        console.log(chalk.green('✅ Connected to Ollama'));
-      } catch (error) {
-        console.error(chalk.red(`\n❌ Cannot connect to Ollama at ${OLLAMA_BASE_URL}`));
-        console.error(chalk.red('   Please ensure Ollama is running and accessible.\n'));
-        process.exit(1);
+    try {
+      const response = await fetch(`${OLLAMA_BASE_URL}/api/tags`);
+      if (!response.ok) {
+        throw new Error('Ollama not responding');
       }
-      
+      console.log(chalk.green('✅ Connected to Ollama'));
+    } catch (error) {
+      console.error(chalk.red(`\n❌ Cannot connect to Ollama at ${OLLAMA_BASE_URL}`));
+      console.error(chalk.red('   Please ensure Ollama is running and accessible.\n'));
+      process.exit(1);
+    }
+    
     // Setup watcher
     const watcher = setupWatcher(resolvedDir);
     
     // Handle graceful shutdown
-      process.on('SIGINT', () => {
-        console.log(chalk.yellow('\n\n👋 Stopping watcher...'));
-        watcher.close();
-        process.exit(0);
-      });
-      
+    process.on('SIGINT', () => {
+      console.log(chalk.yellow('\n\n👋 Stopping watcher...'));
+      watcher.close();
+      process.exit(0);
+    });
+    
   } catch (error) {
     console.error(chalk.red(`\n❌ Error: ${error.message}`));
     if (error.message.includes('not a git repository')) {
@@ -323,6 +323,9 @@ async function startWatch(watchDir) {
 
 // CLI Setup
 program
+  .name('ollama-watcher')
+  .description('Watch code files and get AI-powered reviews via Ollama')
+  .version('1.0.0')
   .option('-w, --watch', 'Watch files for changes and review with Ollama')
   .option('-d, --dir <directory>', 'Directory to watch', process.cwd())
   .action(async (options) => {
