@@ -290,6 +290,7 @@ async function processFileChange(filePath, baseDir = process.cwd()) {
     console.error(chalk.red(`\n❌ Error processing ${filePath}:`), error.message);
     if (error.message.includes('connect') || error.message.includes('fetch')) {
       console.error(chalk.red(`\n💡 Make sure Ollama is running at ${OLLAMA_BASE_URL}`));
+      console.log('test');
       console.error(chalk.red(`   You can start Ollama or check your OLLAMA_HOST and OLLAMA_PORT settings.`));
     }
   } finally {
