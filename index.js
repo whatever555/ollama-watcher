@@ -432,24 +432,21 @@ function displayReview(filePath, review) {
  * Process a file change
  */
 async function processFileChange(filePath, baseDir = process.cwd(), isLight = false) {
-  console.log(chalk.gray(`\n🔄 Processing file change: ${filePath}`));
   if (processingFile === filePath) {
     return; // Skip if already processing
   }
-  
-  processingFile = filePath;
   
   try {
     const git = simpleGit(baseDir);
     const absolutePath = path.isAbsolute(filePath) ? filePath : path.resolve(baseDir, filePath);
     const relativePath = path.relative(baseDir, absolutePath);
     
-    // Check if file is ignored
+    // Check if file is ignored FIRST - completely skip ignored files silently
     if (await isIgnored(git, relativePath)) {
-      console.log(chalk.gray(`⏭️  Skipping ignored file: ${relativePath}`));
-      processingFile = null;
-      return;
+      return; // Silently skip ignored files - no logging, no processing
     }
+    
+    processingFile = filePath;
     
     console.log(chalk.yellow(`\n🔍 Analyzing: ${relativePath}`));
     
@@ -650,7 +647,21 @@ function setupWatcher(baseDir, isLight = false) {
     },
   });
   
-  watcher.on('change', (filePath) => {
+  watcher.on('change', async (filePath) => {
+    // Check if file is ignored before processing (quick check)
+    try {
+      const git = simpleGit(baseDir);
+      const absolutePath = path.isAbsolute(filePath) ? filePath : path.resolve(baseDir, filePath);
+      const relativePath = path.relative(baseDir, absolutePath);
+      
+      // Silently skip ignored files
+      if (await isIgnored(git, relativePath)) {
+        return; // Don't process ignored files at all
+      }
+    } catch (err) {
+      // If check fails, continue anyway
+    }
+    
     // Process file changes (uncommitted changes)
     console.log(chalk.gray(`📝 File changed detected: ${filePath}`));
     
