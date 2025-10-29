@@ -1,0 +1,29 @@
+{
+  "name": "ollama-watcher",
+  "version": "1.0.0",
+  "description": "An npm package that connects to a local ollama instance and watches the code changes in your project while providing feedback on every change made",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/whatever555/ollama-watcher.git"
+  },
+  "keywords": [
+    "ollama",
+    "code",
+    "checking",
+    "smart",
+    "ai",
+    "code",
+    "review",
+    "watcher"
+  ],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/whatever555/ollama-watcher/issues"
+  },
+  "homepage": "https://github.com/whatever555/ollama-watcher#readme"
+}
