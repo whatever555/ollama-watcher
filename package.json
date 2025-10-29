@@ -3,8 +3,11 @@
   "version": "1.0.0",
   "description": "An npm package that connects to a local ollama instance and watches the code changes in your project while providing feedback on every change made",
   "main": "index.js",
+  "bin": {
+    "ollama-watcher": "./index.js"
+  },
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Parameterized tests coming soon\" && exit 0"
   },
   "repository": {
     "type": "git",
@@ -25,5 +28,15 @@
   "bugs": {
     "url": "https://github.com/whatever555/ollama-watcher/issues"
   },
-  "homepage": "https://github.com/whatever555/ollama-watcher#readme"
+  "homepage": "https://github.com/whatever555/ollama-watcher#readme",
+  "dependencies": {
+    "chokidar": "^3.5.3",
+    "commander": "^11.1.0",
+    "simple-git": "^3.22.0",
+    "chalk": "^4.1.2",
+    "dotenv": "^16.4.5"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
 }

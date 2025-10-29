@@ -1,0 +1,13 @@
+node_modules/
+.env
+*.log
+.DS_Store
+dist/
+build/
+*.swp
+*.swo
+*~
+
+tags
+tags.temp
+tags.lock
