@@ -167,6 +167,44 @@ async function isIgnored(git, filePath) {
 }
 
 /**
+ * Check if file type should be reviewed (skip images, binaries, and non-text files)
+ */
+function isReviewableFile(filePath) {
+  const ext = path.extname(filePath).toLowerCase();
+  
+  // Image formats - skip
+  const imageExtensions = [
+    '.png', '.jpg', '.jpeg', '.gif', '.bmp', '.webp', '.ico',
+    '.tiff', '.tif', '.psd', '.eps', '.raw', '.cr2', '.nef', '.orf',
+    '.sr2', '.dng', '.heic', '.heif', '.avif'
+  ];
+  
+  // Binary/document formats - skip
+  const binaryExtensions = [
+    '.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx',
+    '.zip', '.tar', '.gz', '.bz2', '.xz', '.7z', '.rar',
+    '.exe', '.dll', '.so', '.dylib', '.bin',
+    '.mp3', '.mp4', '.avi', '.mov', '.wmv', '.flv', '.mkv',
+    '.woff', '.woff2', '.ttf', '.otf', '.eot', // Fonts
+    '.db', '.sqlite', '.sqlite3', // Databases
+    '.pyc', '.pyo', '.pyd', '.class', '.jar', '.war', // Compiled files
+  ];
+  
+  // If file has no extension, check if it's a known binary or allow it (might be executable)
+  if (!ext) {
+    return true; // Allow files without extensions (might be scripts)
+  }
+  
+  // Skip images and binaries
+  if (imageExtensions.includes(ext) || binaryExtensions.includes(ext)) {
+    return false;
+  }
+  
+  // Allow code/text files
+  return true;
+}
+
+/**
  * Send request to Ollama API
  */
 async function requestOllama(prompt, abortController) {
@@ -446,6 +484,11 @@ async function processFileChange(filePath, baseDir = process.cwd(), isLight = fa
       return; // Silently skip ignored files - no logging, no processing
     }
     
+    // Check if file type is reviewable (skip images, binaries, etc.)
+    if (!isReviewableFile(relativePath)) {
+      return; // Silently skip non-code/non-text files
+    }
+    
     processingFile = filePath;
     
     console.log(chalk.yellow(`\n🔍 Analyzing: ${relativePath}`));
@@ -569,6 +612,11 @@ async function processCommit(git, baseDir, isLight = false) {
         continue;
       }
       
+      // Check if file type is reviewable (skip images, binaries, etc.)
+      if (!isReviewableFile(relativePath)) {
+        continue; // Skip non-code/non-text files silently
+      }
+      
       // Check if file still exists (might have been deleted)
       let fileContent = '';
       try {
@@ -648,7 +696,7 @@ function setupWatcher(baseDir, isLight = false) {
   });
   
   watcher.on('change', async (filePath) => {
-    // Check if file is ignored before processing (quick check)
+    // Quick checks before processing
     try {
       const git = simpleGit(baseDir);
       const absolutePath = path.isAbsolute(filePath) ? filePath : path.resolve(baseDir, filePath);
@@ -657,6 +705,11 @@ function setupWatcher(baseDir, isLight = false) {
       // Silently skip ignored files
       if (await isIgnored(git, relativePath)) {
         return; // Don't process ignored files at all
+      }
+      
+      // Silently skip non-reviewable file types (images, binaries, etc.)
+      if (!isReviewableFile(relativePath)) {
+        return; // Don't process non-code/non-text files
       }
     } catch (err) {
       // If check fails, continue anyway
