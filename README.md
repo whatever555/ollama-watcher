@@ -45,7 +45,7 @@ npm install --save-dev ollama-watcher
 
 Then use via `npx`:
 ```bash
-npx ollama-watcher --watch
+npx ollama-watcher --watch --light
 ```
 
 **Pros of Local Installation:**
