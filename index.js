@@ -186,7 +186,7 @@ function isReviewableFile(filePath) {
     '.exe', '.dll', '.so', '.dylib', '.bin',
     '.mp3', '.mp4', '.avi', '.mov', '.wmv', '.flv', '.mkv',
     '.woff', '.woff2', '.ttf', '.otf', '.eot', // Fonts
-    '.db', '.sqlite', '.sqlite3', // Databases
+    '.db', '.sqlite', '.sqlite3', 'ndb', // Databases
     '.pyc', '.pyo', '.pyd', '.class', '.jar', '.war', // Compiled files
   ];
   
