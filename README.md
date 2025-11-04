@@ -64,7 +64,7 @@ For most users, **global installation is recommended** since this is a developme
 
 ### 1. Start Ollama
 
-Make sure Ollama is running on your machine:
+Make sure Ollama is running on your machine, and make sure to enable the toggle for "Expose Ollama to the network" in Ollama settings.
 
 ```bash
 ollama serve
