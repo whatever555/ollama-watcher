@@ -2,6 +2,9 @@
 
 An intelligent npm package that watches your code files for changes and provides AI-powered code reviews using your local Ollama instance. Get instant feedback on uncommitted changes and committed code with detailed suggestions, line-numbered feedback, and helpful improvements.
 
+<img width="4358" height="2530" alt="screen" src="https://github.com/user-attachments/assets/fa43f52c-01fd-43d2-bb1a-f15363fd14df" />
+
+
 ## Features
 
 - 🤖 **AI-Powered Reviews** - Uses your local Ollama instance for code reviews
