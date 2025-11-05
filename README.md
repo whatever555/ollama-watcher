@@ -1,7 +1,7 @@
 # Rapid Start 
 
 First, verify in ollama settings that "Expose Ollama to the network" is enabled  
-then..  
+Go to your project folder and then..  
 ```bash
 npm install -g ollama-watcher
 ollama serve
