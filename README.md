@@ -1,7 +1,7 @@
 # Rapid Start 
 
 Get ollama and install a model (https://ollama.com/)  
-First, verify in ollama settings that "Expose Ollama to the network" is enabled  
+Verify in ollama settings that "Expose Ollama to the network" is enabled  
 Go to your project folder and set `OLLAMA_MODEL=YOUR_OLLAMA_MODEL_NAME` in the `.env` file.   
 then..  
 ```bash
