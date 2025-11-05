@@ -7,9 +7,11 @@ An intelligent npm package that watches your code files for changes and provides
 
 # Rapid Start 
 
+First, verify in ollama settings that "Expose Ollama to the network" is enabled  
+then..  
 ```bash
 npm install -g ollama-watcher
-ollama serve (verify in ollama settings that "Expose Ollama to the network" is enabled)
+ollama serve
 npx ollama-watcher --watch --light
 ```
 
