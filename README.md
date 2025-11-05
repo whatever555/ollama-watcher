@@ -1,7 +1,9 @@
 # Rapid Start 
 
+Get ollama and install a model   
 First, verify in ollama settings that "Expose Ollama to the network" is enabled  
-Go to your project folder and then..  
+Go to your project folder and set `OLLAMA_MODEL=YOUR_OLLAMA_MODEL_NAME` in the `.env` file.   
+then..  
 ```bash
 npm install -g ollama-watcher
 ollama serve
