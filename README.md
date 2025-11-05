@@ -1,10 +1,3 @@
-# Ollama Watcher
-
-An intelligent npm package that watches your code files for changes and provides AI-powered code reviews using your local Ollama instance. Get instant feedback on uncommitted changes and committed code with detailed suggestions, line-numbered feedback, and helpful improvements.
-
-<img width="4358" height="2530" alt="screen" src="https://github.com/user-attachments/assets/fa43f52c-01fd-43d2-bb1a-f15363fd14df" />
-
-
 # Rapid Start 
 
 First, verify in ollama settings that "Expose Ollama to the network" is enabled  
@@ -14,6 +7,14 @@ npm install -g ollama-watcher
 ollama serve
 npx ollama-watcher --watch --light
 ```
+
+
+# Ollama Watcher
+
+An intelligent npm package that watches your code files for changes and provides AI-powered code reviews using your local Ollama instance. Get instant feedback on uncommitted changes and committed code with detailed suggestions, line-numbered feedback, and helpful improvements.
+
+<img width="4358" height="2530" alt="screen" src="https://github.com/user-attachments/assets/fa43f52c-01fd-43d2-bb1a-f15363fd14df" />
+
 
 
 ## Features
