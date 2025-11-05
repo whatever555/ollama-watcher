@@ -5,6 +5,15 @@ An intelligent npm package that watches your code files for changes and provides
 <img width="4358" height="2530" alt="screen" src="https://github.com/user-attachments/assets/fa43f52c-01fd-43d2-bb1a-f15363fd14df" />
 
 
+# Rapid Start 
+
+```bash
+npm install -g ollama-watcher
+ollama serve (verify in ollama settings that "Expose Ollama to the network" is enabled)
+npx ollama-watcher --watch --light
+```
+
+
 ## Features
 
 - 🤖 **AI-Powered Reviews** - Uses your local Ollama instance for code reviews
@@ -86,7 +95,7 @@ cd /path/to/your/project
 ### 3. Start Watching
 
 ```bash
-ollama-watcher --watch
+ollama-watcher --watch --light
 ```
 
 That's it! The watcher will now:
